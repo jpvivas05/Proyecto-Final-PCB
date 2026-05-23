@@ -1,114 +1,87 @@
 #include <Arduino.h>
-
-// ===== Pines =====
+// Configuracion de sensor de respiracion
 const int pinSensor = 32;
-
 const int pinAlarma = 21;
 const int pinBajo = 19;
 const int pinBien = 18;
 
-// ===== Umbrales =====
+const float Vref = 3.3;
 const int umbralAlto = 170;
 const int umbralBajo = 150;
 
-// ===== Variables =====
 int contadorEventos = 0;
+int eventosNecesarios =5;
 bool estadoVariante = false;
 
-// ===== Tiempo de medición =====
-unsigned long tiempoInicio = 0;
-const unsigned long ventanaTiempo = 5000; // 5 segundos
+bool ledEncendido = false;
+unsigned long tiempoInicioLED = 0;
+
+const unsigned long tiempoEncendido = 3000;
 
 void setup() {
-
     Serial.begin(115200);
 
+    // Resolucion ADC
     analogReadResolution(12);
+    //Medicion hasta 3.3
     analogSetAttenuation(ADC_11db);
-
     pinMode(pinAlarma, OUTPUT);
     pinMode(pinBajo, OUTPUT);
     pinMode(pinBien, OUTPUT);
 
-    digitalWrite(pinAlarma, LOW);
-    digitalWrite(pinBajo, LOW);
-    digitalWrite(pinBien, LOW);
-
-    tiempoInicio = millis();
-
+    delay(100);
     Serial.println("Iniciando lectura...");
 }
 
 void loop() {
-
-    // ===== Promedio ADC =====
+  //Promedio para estabilidad
     int suma = 0;
 
-    for(int i = 0; i < 10; i++){
-        suma += analogReadMilliVolts(pinSensor);
-        delay(5);
+  for(int i = 0; i < 10; i++){
+    suma += analogReadMilliVolts(pinSensor);
+    delay(5);
+  }
+
+  int voltaje = suma / 10;
+
+  Serial.print("Voltaje: ");
+  Serial.print(voltaje);
+  Serial.println(" mV");
+
+  if (!ledEncendido){
+    if (voltaje>umbralAlto && !estadoVariante){
+      estadoVariante = true;
     }
+    if (voltaje<umbralBajo && estadoVariante){
+      contadorEventos++;
+      estadoVariante = false;
 
-    int voltaje = suma / 10;
-
-    Serial.print("Voltaje: ");
-    Serial.println(voltaje);
-
-    // ===== Detección de respiración =====
-
-    if (voltaje > umbralAlto && !estadoVariante) {
-        estadoVariante = true;
+      Serial.print("Evento: ");
+      Serial.println(contadorEventos);
     }
-
-    if (voltaje < umbralBajo && estadoVariante) {
-
-        contadorEventos++;
-        estadoVariante = false;
-
-        Serial.print("Respiracion detectada: ");
-        Serial.println(contadorEventos);
+    if (contadorEventos>= eventosNecesarios){
+      digitalWrite(pinAlarma, HIGH);
+      delay(5);
+      digitalWrite(pinBajo, HIGH);
+      delay(5);
+      digitalWrite(pinBien, HIGH);
+      delay(5);
+      ledEncendido = true;
+      tiempoInicioLED = millis();
+      Serial.println("LED Encendido, ALARMA");
     }
-
-    // ===== Evaluar cada ventana de tiempo =====
-
-    if (millis() - tiempoInicio >= ventanaTiempo) {
-
-        // Apagar todos primero
-        digitalWrite(pinAlarma, LOW);
-        digitalWrite(pinBajo, LOW);
-        digitalWrite(pinBien, LOW);
-
-        Serial.print("Total respiraciones: ");
-        Serial.println(contadorEventos);
-
-        // ===== Clasificación =====
-
-        if (contadorEventos <= 2) {
-
-            // Respiración baja
-            digitalWrite(pinBajo, HIGH);
-
-            Serial.println("RESPIRACION BAJA");
-
-        } else if (contadorEventos <= 6) {
-
-            // Respiración normal
-            digitalWrite(pinBien, HIGH);
-
-            Serial.println("RESPIRACION NORMAL");
-
-        } else {
-
-            // Hiperventilación
-            digitalWrite(pinAlarma, HIGH);
-
-            Serial.println("HIPERVENTILACION");
-        }
-
-        // Reiniciar ventana
-        contadorEventos = 0;
-        tiempoInicio = millis();
+  }
+  if (ledEncendido){
+    if(millis() - tiempoInicioLED>= tiempoEncendido){
+      digitalWrite(pinAlarma, LOW);
+      digitalWrite(pinBajo, LOW);
+      digitalWrite(pinBien, LOW);
+      ledEncendido = false;
+      contadorEventos = 0;
+      estadoVariante = false;
+      Serial.println("LED Apagado, contador reiniciado");
+      delay(10);
     }
-
-    delay(20);
+  }
+}
 }
